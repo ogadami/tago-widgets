@@ -142,11 +142,33 @@
         // Listen for messages from Tago
         window.addEventListener('message', function(event) {
             console.log('Message received:', event.data);
+            console.log('Message origin:', event.origin);
             
-            if (event.data && event.data.data) {
-                widgetData = event.data.data;
-                console.log('Widget data:', widgetData);
-                processData(widgetData);
+            // Ignore metamask messages
+            if (event.data && event.data.name === 'metamask-provider') {
+                return;
+            }
+            
+            // Check for various data formats
+            if (event.data) {
+                // Try to extract data from different possible structures
+                if (event.data.data) {
+                    widgetData = event.data.data;
+                    console.log('Widget data from event.data.data:', widgetData);
+                    processData(widgetData);
+                } else if (event.data.variables) {
+                    widgetData = event.data.variables;
+                    console.log('Widget data from event.data.variables:', widgetData);
+                    processData(widgetData);
+                } else if (event.data.result) {
+                    widgetData = event.data.result;
+                    console.log('Widget data from event.data.result:', widgetData);
+                    processData(widgetData);
+                } else if (Array.isArray(event.data)) {
+                    widgetData = event.data;
+                    console.log('Widget data from event.data (array):', widgetData);
+                    processData(widgetData);
+                }
             }
             
             if (event.data && event.data.token) {
@@ -192,18 +214,44 @@
         
         function processData(data) {
             console.log('Processing data...', data);
+            console.log('Data type:', typeof data);
+            console.log('Is array?:', Array.isArray(data));
             
-            if (!data || data.length === 0) {
-                displayNoData('No data received');
+            // Handle different data formats
+            let dataArray = [];
+            
+            if (Array.isArray(data)) {
+                dataArray = data;
+            } else if (data && typeof data === 'object') {
+                // If data is an object, try to extract array from common properties
+                if (data.result) dataArray = data.result;
+                else if (data.data) dataArray = data.data;
+                else if (data.values) dataArray = data.values;
+                else {
+                    // Convert object to array format
+                    dataArray = Object.keys(data).map(key => ({
+                        variable: key,
+                        value: data[key]
+                    }));
+                }
+            }
+            
+            console.log('Data array:', dataArray);
+            
+            if (!dataArray || dataArray.length === 0) {
+                displayNoData('No data received or empty dataset');
                 return;
             }
             
             // Group data by time to reconstruct records
             const recordsByTime = {};
             
-            data.forEach(item => {
-                const time = item.time || item.created_at;
-                if (!time) return;
+            dataArray.forEach(item => {
+                const time = item.time || item.created_at || item.timestamp;
+                if (!time) {
+                    console.log('No time for item:', item);
+                    return;
+                }
                 
                 if (!recordsByTime[time]) {
                     recordsByTime[time] = {
